@@ -1,0 +1,103 @@
+#!/bin/bash
+#PBS -q AL
+#PBS -l select=1:ncpus=1:mem=8gb
+#PBS -m abe
+#PBS -M fumiya@rcnp.osaka-u.ac.jp
+#PBS -N merge_analyze
+
+# worker_merge_analyze.pbs
+# Step 3+4: シャード ROOT ファイルを hadd でマージし、
+#           analyze_drift.C で T-L 曲線 CSV を生成する。
+#
+# qsub から渡す変数 (-v):
+#   RUN_TAG         : 必須  例) run_20260504_120000
+#   OUTBASE         : 省略可 (デフォルト: root)
+#   ANALYZE_SCRIPT  : 省略可 (デフォルト: <OUTDIR>/analyze_drift.C)
+
+set -euo pipefail
+
+# --- 必須変数チェック ---
+: "${RUN_TAG:?RUN_TAG is required}"
+
+cd "${PBS_O_WORKDIR:?PBS_O_WORKDIR not set}"
+umask 0002
+
+OUTBASE="${OUTBASE:-root}"
+OUTDIR="${OUTBASE}/${RUN_TAG}"
+LOGDIR="logs/${RUN_TAG}"
+mkdir -p "$LOGDIR"
+
+LOGFILE="$LOGDIR/merge_analyze.log"
+exec > >(tee -a "$LOGFILE") 2>&1
+
+echo "[INFO] merge_analyze started at $(date)"
+echo "[INFO] RUN_TAG=${RUN_TAG}  OUTDIR=${OUTDIR}"
+
+# =========================
+# 環境設定
+# =========================
+ulimit -s unlimited || true
+
+source "/np1a/phanes/opt/root/6.32.06/bin/thisroot.sh"
+PATH="$(echo "$PATH" | tr ':' '\n' | grep -v '/root_v6\.28\.06/' | paste -sd: -)"
+LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v '/root_v6\.28\.06/' | paste -sd: -)"
+export PATH LD_LIBRARY_PATH
+
+export PATH="/home/fumiya/local/gcc-10.3.0/bin${PATH:+:$PATH}"
+export LD_LIBRARY_PATH="/home/fumiya/local/gcc-10.3.0/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+export GARFIELD_HOME="$HOME/garfieldpp-master/install"
+export LD_LIBRARY_PATH="$GARFIELD_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+echo "[INFO] root-config --version: $(root-config --version 2>/dev/null || echo NA)"
+
+# =========================
+# Step 3: hadd マージ
+# =========================
+MERGED="${OUTDIR}/grid_times.merged.root"
+SHARDS=( "${OUTDIR}"/grid_times.shard*.root )
+
+if [ "${#SHARDS[@]}" -eq 0 ]; then
+  echo "[ERROR] シャードファイルが見つかりません: ${OUTDIR}/grid_times.shard*.root"
+  exit 1
+fi
+
+echo "[INFO] Merging ${#SHARDS[@]} shard files -> ${MERGED}"
+hadd -f "$MERGED" "${SHARDS[@]}"
+echo "[INFO] hadd 完了"
+
+# =========================
+# Step 4: analyze_drift.C
+# =========================
+# スクリプトの優先順: 引数 > OUTDIR 内 > 最新 run 内
+if [ -n "${ANALYZE_SCRIPT:-}" ] && [ -f "$ANALYZE_SCRIPT" ]; then
+  ANALYZE_C="$ANALYZE_SCRIPT"
+elif [ -f "${OUTDIR}/analyze_drift.C" ]; then
+  ANALYZE_C="${OUTDIR}/analyze_drift.C"
+else
+  LATEST=$(find "root" -name "analyze_drift.C" -not -path "${OUTDIR}/*" 2>/dev/null | sort | tail -1)
+  if [ -z "$LATEST" ]; then
+    echo "[ERROR] analyze_drift.C が見つかりません"
+    exit 1
+  fi
+  cp "$LATEST" "${OUTDIR}/analyze_drift.C"
+  ANALYZE_C="${OUTDIR}/analyze_drift.C"
+  echo "[INFO] analyze_drift.C を ${LATEST} からコピー"
+fi
+
+echo "[INFO] analyze_drift.C 実行中: ${ANALYZE_C}"
+pushd "${OUTDIR}" > /dev/null
+root -l -b -q "$(basename "${ANALYZE_C}")" 2>&1 | tee "$PBS_O_WORKDIR/$LOGDIR/analyze_drift.out"
+popd > /dev/null
+
+# CSV の存在確認
+for SUBDIR in analysis_L0_prim analysis_L0_all; do
+  CSV="${OUTDIR}/${SUBDIR}/t_hist_nt.csv"
+  if [ ! -f "$CSV" ]; then
+    echo "[WARN] ${CSV} が生成されませんでした"
+  else
+    echo "[OK] T-L CSV: ${CSV}"
+  fi
+done
+
+echo "[INFO] merge_analyze 完了 at $(date)"

@@ -1,0 +1,65 @@
+#pragma once
+// AP（Anode 上 y=+gap、Potential 下 y=-gap）＋平行板 (Super-Cell 方式)
+// Anode ワイヤー面（+gap 側）と Potential 平行板電極（-gap 側）の非対称構成。
+#include "detector_geometry.hh"
+#include <cmath>
+#include <stdexcept>
+#include <string>
+#include <cstdio>
+
+namespace Detector {
+
+inline Detector::Geometry PAP_PlaneCathode_Periodic(
+    double pitchSense = 0.40,   
+    double gap        = 0.50,   
+    double phase      = 0.0,    
+    double rAn = 1.0e-3, double rPW = 2.5e-3,
+    double vAn = 0.0, double vPW = 0, double vCat = -1100.0,
+    bool pwSameAsAnode = false,
+    int nWires = 4             // 中心から左右に配置する本数
+) {
+  const double L   = pitchSense;      
+  const double off = L / 2.0;         
+  
+  if (off >= L) throw std::runtime_error("invalid APA geometry");
+  // vPW = vCat * (rPW / gap - rAn / gap) / (1.0 - rAn / gap); // ★ 修正1: スイープ値を反映させるためコメントアウト
+  
+  Detector::Geometry g;
+  // ★ ここが魔法！ 周期境界をONに戻す
+  g.periodicX = true; 
+  
+  // ★ スーパーセル（41セル分）の全体幅を新しい「周期」とする
+  int totalCells = 2 * nWires + 1;
+  const double W = totalCells * L; // ★ 追加: スーパーセルの全幅
+  g.pitchX = W; // ★ 修正2: 重なりを防ぐため W に変更
+
+  // 描画用の表示範囲
+  g.xmin = -(nWires + 1) * L; 
+  g.xmax = +(nWires + 1) * L;
+  g.ymin = -gap; g.ymax = +gap;
+
+  // Anode 面（上, +gap）と Potential 面（下, -gap）
+  g.electrodes.push_back(Detector::Electrode{
+      Detector::ElectrodeKind::PlaneY, 0.0, +gap, vCat, 0.0, W, "Anode"}); // L を W に変更
+  g.electrodes.push_back(Detector::Electrode{
+      Detector::ElectrodeKind::PlaneY, 0.0, -gap, vCat, 0.0, W, "Potential"}); // L を W に変更
+
+  const double vPW_eff = pwSameAsAnode ? vAn : vPW;
+  
+  // スーパーセルの中に全ワイヤーを個別の名前で登録
+  for (int i = -nWires; i <= nWires; ++i) {
+      double xa  = phase + i * L;
+      double xpr = phase + i * L + off;
+      
+      std::string aName = "Anode_" + std::to_string(i);
+      std::string pName = "PW_" + std::to_string(i);
+
+      g.electrodes.push_back(Detector::Electrode{
+          Detector::ElectrodeKind::WireRow, xa, 0.0, vAn, rAn, W, aName}); // L を W に変更
+      g.electrodes.push_back(Detector::Electrode{
+          Detector::ElectrodeKind::WireRow, xpr, 0.0, vPW_eff, rPW, W, pName}); // L を W に変更
+  }
+
+  return g;
+}
+} // namespace Detector

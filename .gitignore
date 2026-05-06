@@ -1,0 +1,47 @@
+# ---- コンパイル生成物 ----
+# バイナリ（拡張子なし実行ファイル）
+fieldview_*
+fieldview_*/
+optimize_efield_*
+optimize_efield_*/
+track_reco_avalanche_*
+track_reco_avalanche_*/
+run
+run_one_drift
+run/
+*.dSYM/
+*.o
+*.a
+
+# ---- ROOT ファイル ----
+*.root
+
+# ---- ログ・実行結果ディレクトリ ----
+logs*/
+root/
+onedrift/
+png_dist_threshold/
+
+# ---- PBS ジョブ出力 ----
+garfield_sim.*
+*.e[0-9]*
+*.o[0-9]*
+
+# ---- テキスト中間ファイル ----
+drift_alpha_electrons.txt
+check_line_x0.csv
+test_y005_t_hist.csv
+test.txt
+
+# ---- LaTeX 生成物 ----
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
+*.pdf
+*.bak*
+
+# ---- macOS ----
+.DS_Store

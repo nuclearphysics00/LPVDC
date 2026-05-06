@@ -1,0 +1,77 @@
+#!/bin/bash
+#PBS -q AL
+#PBS -l select=1:ncpus=4:mem=16gb
+#PBS -l walltime=24:00:00
+#PBS -m abe
+#PBS -M fumiya@rcnp.osaka-u.ac.jp
+#PBS -N optimize_efield
+
+# worker_optimize.pbs
+# Step 1: optimize_efield_* を実行し電場最適化結果を出力する。
+#
+# qsub から渡す変数 (-v):
+#   EXE      : 必須  例) ./optimize_efield_pap_wirecath
+#   RUN_TAG  : 省略可 (デフォルト: 実行時刻)
+
+set -euo pipefail
+
+: "${EXE:?EXE is required}"
+
+cd "${PBS_O_WORKDIR:?PBS_O_WORKDIR not set}"
+umask 0002
+
+RUN_TAG="${RUN_TAG:-opt_$(date +%Y%m%d_%H%M%S)}"
+LOGDIR="logs/${RUN_TAG}"
+mkdir -p "$LOGDIR"
+
+LOGFILE="$LOGDIR/optimize.log"
+exec > >(tee -a "$LOGFILE") 2>&1
+
+echo "[INFO] optimize_efield started at $(date)"
+echo "[INFO] EXE=${EXE}  RUN_TAG=${RUN_TAG}"
+
+# =========================
+# 環境設定
+# =========================
+ulimit -s unlimited || true
+
+source "/np1a/phanes/opt/root/6.32.06/bin/thisroot.sh"
+PATH="$(echo "$PATH" | tr ':' '\n' | grep -v '/root_v6\.28\.06/' | paste -sd: -)"
+LD_LIBRARY_PATH="$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v '/root_v6\.28\.06/' | paste -sd: -)"
+export PATH LD_LIBRARY_PATH
+
+export PATH="/home/fumiya/local/gcc-10.3.0/bin${PATH:+:$PATH}"
+export LD_LIBRARY_PATH="/home/fumiya/local/gcc-10.3.0/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+source "$HOME/Geant4/geant4/install/bin/geant4.sh"
+unset QT_PLUGIN_PATH || true
+unset QML2_IMPORT_PATH || true
+
+export GARFIELD_HOME="$HOME/garfieldpp-master/install"
+export LD_LIBRARY_PATH="$GARFIELD_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+echo "[INFO] root-config --version: $(root-config --version 2>/dev/null || echo NA)"
+
+# =========================
+# 実行ファイル確認
+# =========================
+if [ ! -x "$EXE" ]; then
+  echo "[ERROR] Executable not found: ${EXE}"
+  exit 2
+fi
+
+# =========================
+# 実行
+# =========================
+set +e
+"$EXE" >> "$LOGDIR/optimize.out" 2>> "$LOGDIR/optimize.err"
+STATUS=$?
+set -e
+
+if [ $STATUS -eq 0 ]; then
+  echo "[INFO] optimize_efield 完了 at $(date)"
+else
+  echo "[ERROR] optimize_efield 失敗 (exit=${STATUS}) at $(date)"
+  tail -n 40 "$LOGDIR/optimize.err" || true
+  exit $STATUS
+fi
