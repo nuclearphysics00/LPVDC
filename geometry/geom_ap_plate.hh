@@ -22,16 +22,16 @@ inline Detector::Geometry PAP_PlaneCathode_Periodic(
   const double off = L / 2.0;         
   
   if (off >= L) throw std::runtime_error("invalid APA geometry");
-  // vPW = vCat * (rPW / gap - rAn / gap) / (1.0 - rAn / gap); // ★ 修正1: スイープ値を反映させるためコメントアウト
+  // vPW = vCat * (rPW / gap - rAn / gap) / (1.0 - rAn / gap); // スイープ時は外部から vPW を渡すためコメントアウト
   
   Detector::Geometry g;
-  // ★ ここが魔法！ 周期境界をONに戻す
+  // 周期境界条件を有効化（Super-Cell 方式）
   g.periodicX = true; 
   
-  // ★ スーパーセル（41セル分）の全体幅を新しい「周期」とする
+  // Super-Cell 全体幅（2*nWires+1 セル分）を周期として設定する
   int totalCells = 2 * nWires + 1;
-  const double W = totalCells * L; // ★ 追加: スーパーセルの全幅
-  g.pitchX = W; // ★ 修正2: 重なりを防ぐため W に変更
+  const double W = totalCells * L; // Super-Cell 全幅
+  g.pitchX = W; // ワイヤ重複防止のため Super-Cell 幅 W を周期として設定
 
   // 描画用の表示範囲
   g.xmin = -(nWires + 1) * L; 

@@ -59,7 +59,7 @@
 #include "geometry/eval_uniform.hh"
 #include "eval_maps.hh"
 
-// --- ★ Debug Macro Switch ★ ------------------------------------------------
+// --- Debug Macro Switch ---------------------------------------------------
 #define DEBUG_WAVEFORM 
 
 // --- ROOT output switch ----------------------------------------------------
@@ -259,10 +259,10 @@ struct GainPlotInfo {
 int main(int argc, char** argv) {
   //TApplication app("app", &argc, argv);
   
-  // ★ バッチジョブ向けに画面の乱立を防ぐためバッチモードをON(非表示)にする
+  // バッチジョブ向けにバッチモードを有効化し、ウィンドウ表示を抑制する
   gROOT->SetBatch(kTRUE);  gStyle->SetOptStat(0);
 
-  // ★ 引数処理: 第1引数=ジョブID(シード値), 第2引数=時間ヒストグラム(任意)
+  // 引数処理: 第1引数=ジョブID(シード値), 第2引数=時間ヒストグラム(任意)
   int job_seed = 1;
   std::string timeHistFile;
 
@@ -381,7 +381,7 @@ int main(int argc, char** argv) {
   fs::path trackDir = baseOutDir / "track";
   fs::create_directories(trackDir);
 
-  // 3. データ記録用ROOTファイルセットアップ (★ファイル名にjob_seedを付与)
+  // 3. データ記録用 ROOT ファイルのセットアップ（ファイル名に job_seed を付与）
   std::string rootOutPath = (trackDir / Form("track_results_job%d.root", job_seed)).string();
   TFile* fOut = new TFile(rootOutPath.c_str(), "RECREATE"); fOut->cd(); 
   TTree* tree = new TTree("tree", "Track Reconstruction Stats"); tree->SetDirectory(fOut); 
@@ -414,7 +414,7 @@ int main(int argc, char** argv) {
   const int nSigBins = std::max(200, (int)std::ceil((tmax_sig - t0_sig_ns) / dt_sig_ns));
   sensor.SetTimeWindow(t0_sig_ns, dt_sig_ns, nSigBins);
 
-  // ★ シード値を設定し、1ジョブあたり1イベントにする
+  // 乱数シード値を設定し、1ジョブあたり1イベントとして実行する
   TRandom3 gen(job_seed); 
   
   TFile* fDriftOut = nullptr;
@@ -472,7 +472,7 @@ int main(int argc, char** argv) {
   // =========================================================
   // (A) Map Gen (Field Lines & Maps)
   // =========================================================
-  // ★ シード1のジョブでのみ重いマップ生成を行う
+  // ジョブ ID が 1 の場合のみ重いマップ生成を実行する
   bool make_maps = (job_seed == 1); 
   if (make_maps) {
     std::printf("[map] Generating high-resolution field maps & lines...\n");
@@ -540,7 +540,7 @@ int main(int argc, char** argv) {
     mg_anode->SetTitle("Electric Field Profile at Anode X positions;Y [cm];|E| [V/cm]");
     
     int color_idx = 1;
-    // ★ 描画用のテキスト情報を一時保存する構造体
+    // グラフ描画後に NDC 座標で配置するためのテキスト情報を一時保存する構造体
     struct LabelInfo { std::string text; int color; };
     std::vector<LabelInfo> labels10k;
 
@@ -575,7 +575,7 @@ int main(int argc, char** argv) {
         gr->SetTitle(Form("Anode at x = %.2f cm", xw));
         gr->SetLineColor(color_idx); gr->SetLineWidth(2); mg_anode->Add(gr, "L");
         
-        // ★ テキスト情報をベクターに保存しておく
+        // テキスト情報をベクターに追加する
         if (found_10k) {
             labels10k.push_back({Form("x=%.2f: Y [%.4f, %.4f] cm", xw, y_10k_min, y_10k_max), color_idx});
         }
@@ -587,11 +587,11 @@ int main(int argc, char** argv) {
 
     cProfileAnode->cd();
     if (mg_anode->GetListOfGraphs() != nullptr) {
-        // ★ 先にグラフ本体と軸を描画（ここで座標系が確定する）
+        // グラフ本体と軸を先に描画して座標系を確定する
         mg_anode->Draw("A"); 
         cProfileAnode->BuildLegend(0.65, 0.75, 0.90, 0.90);
 
-        // ★ グラフ描画後にテキストを NDC (0~1の相対座標) で画面に配置する
+        // グラフ描画後に NDC 座標（0～1）でテキストを配置する
         TLatex latex_10k; 
         latex_10k.SetNDC(); // 絶対座標系を有効化
         latex_10k.SetTextSize(0.025); 
@@ -758,7 +758,7 @@ int main(int argc, char** argv) {
     cE->SetRightMargin(0.15); cE->SetGrid(); cE->SetLogz(1);
     if (minPos < 1e97) hE.SetMinimum(minPos * 0.9); hE.SetMaximum(maxVal_global * 1.05);
     
-    // ★ ここで描画レンジを絞る（ズーム）
+    // 描画範囲を設定する
     hE.GetXaxis()->SetRangeUser(-0.2, 0.2);
     hE.GetYaxis()->SetRangeUser(-0.25, 0.25);
     

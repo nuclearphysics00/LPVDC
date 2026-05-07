@@ -19,7 +19,7 @@
 //
 // 実行： ./track_reco_avalanche
 //
-// ※ カレントディレクトリに t_to_Lo_table.csv を置いておいてください。
+// ※ カレントディレクトリに t_to_Lo_table.csv を置くこと。
 
 #include <cstdio>
 #include <cstdlib>

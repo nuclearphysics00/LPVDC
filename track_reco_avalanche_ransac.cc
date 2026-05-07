@@ -442,7 +442,7 @@ int main(int argc, char** argv) {
               gW.SetLineWidth(1); gW.SetLineColor(kBlue);
               gW.Draw("AL");
 
-              // ★修正: 正負両方の閾値線を描画する
+              // 閾値線を正負両方向に描画する
               TLine *lth_p = new TLine(t0_sig_ns, signalThreshold, tmax_sig, signalThreshold);
               lth_p->SetLineColor(kRed); lth_p->SetLineStyle(2); lth_p->Draw("same");
 
@@ -619,7 +619,7 @@ int main(int argc, char** argv) {
         fReco.SetLineColor(kRed); fReco.SetLineWidth(2);
         fReco.Draw("same");
 
-        // ★ 計算された「接点」の確認プロット (赤点)
+        // 接線拥点の確認用プロット（赤点）
         {
             double denom = std::sqrt(1.0 + best_a * best_a);
             double nx = -best_a / denom;

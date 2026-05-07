@@ -24,7 +24,7 @@ inline std::pair<int,int> rational_approx(double r, int Nmax=24) {
 // AP（Anode 上 y=+gap、Potential 下 y=-gap）＋ワイヤカソード (Super-Cell 方式)
 // Anode 側（+gap）と Potential 側（-gap）の非対称構成。
 // * 周期境界(Periodic)をONにしつつ、全体を巨大な1つの周期(Super-Cell)とする。
-// * 端の電場歪みを防ぎ、かつ全ワイヤーから独立した波形読み出しを可能にします。
+// * 端の電場歪みを防ぎ、かつ全ワイヤーから独立した波形読み出しを可能にする。
 //============================================================
 inline Geometry PAP_WireCathode_Periodic( 
     double pitchSense = 0.40,   // [cm] A–A
@@ -47,9 +47,9 @@ inline Geometry PAP_WireCathode_Periodic(
   // vPW = vCat * (rPW / gap - rAn / gap) / (1.0 - rAn / gap);
 
   Geometry g;
-  g.periodicX = true; // ★ 魔法の復活：周期境界をONにする！
+  g.periodicX = true; // 周期境界条件を有効化（Super-Cell 方式）
   
-  // ★ スーパーセル全体の幅を計算し、それを新しい周期(pitchX)とする
+  // Super-Cell 全体幅を計算し、周期(pitchX)として設定する
   const int totalCells = 2 * nWires + 1;
   const double W = totalCells * L;
   g.pitchX = W; 

@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # --- 配列ジョブのタスクID（シード値）を取得 ---
-# PBS Pro / Torque の両方に対応できるようフォールバックを入れています
+# PBS Pro / Torque の両方に対応できるようフォールバックを設ける
 JOB_SEED=${PBS_ARRAYID:-${PBS_ARRAY_INDEX:-1}}
 
 echo "start batch job: Task ID (Seed) = $JOB_SEED"
@@ -33,7 +33,7 @@ else
 fi
 
 if [[ -z "${T_HIST_CSV:-}" || ! -f "$T_HIST_CSV" ]]; then
-  echo "[ERROR] t_hist_nt.csv が見つかりません: ${T_HIST_CSV:-未指定}" >&2
+  echo "[ERROR] t_hist_nt.csv が見つからない: ${T_HIST_CSV:-未指定}" >&2
   exit 1
 fi
 
@@ -92,7 +92,7 @@ fi
 # =====================
 # 実行＆エラーハンドリング
 # =====================
-# ★ 第1引数に JOB_SEED、第2引数に T_HIST_CSV を渡して実行
+# 第1引数に JOB_SEED、第2引数に T_HIST_CSV を渡して実行する
 echo "[INFO] Running: $EXE $JOB_SEED $T_HIST_CSV" | tee -a "$LOGDIR/job.log"
 
 set +e

@@ -98,10 +98,10 @@ qsub_run() {
 # -----------------------------------------------------------------------
 MISSING=0
 for bin in "$FIELDVIEW_BIN" "$TRACKRECO_BIN"; do
-  [[ ! -x "$bin" ]] && echo "[ERROR] バイナリが見つかりません: $bin" >&2 && MISSING=1
+  [[ ! -x "$bin" ]] && echo "[ERROR] バイナリが見つからない: $bin" >&2 && MISSING=1
 done
 if [[ $MISSING -eq 1 ]]; then
-  echo "       compile.sh / compile_track_reco.sh を先に実行してください。" >&2
+  echo "       compile.sh / compile_track_reco.sh を先に実行すること" >&2
   exit 1
 fi
 
@@ -124,7 +124,7 @@ PREV_JID=""
 # -----------------------------------------------------------------------
 if [[ $RUN_OPTIMIZE -eq 1 ]]; then
   if [[ ! -x "$OPTIMIZE_BIN" ]]; then
-    echo "[WARN] $OPTIMIZE_BIN が見つかりません。Step 1 をスキップします。" >&2
+    echo "[WARN] $OPTIMIZE_BIN が見つからない。Step 1 をスキップする。" >&2
   else
     echo ""
     echo "[Step 1] optimize_efield を投入中..."
@@ -144,7 +144,7 @@ else
   # RUN_OPTIMIZE=0 で起動した場合はここを通る
   echo ""
   echo "[Step 1] optimize_efield はスキップ (-O が指定された、または RUN_OPTIMIZE=0 で起動)"
-  echo "         vPW が main_fieldview_*.cc に正しく反映済みであることを確認してください。"
+  echo "         vPW が main_fieldview_*.cc に正しく反映済みであることを確認すること。"
 fi
 
 # -----------------------------------------------------------------------

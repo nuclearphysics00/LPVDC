@@ -91,8 +91,8 @@ echo "[Step 0] バイナリの存在確認..."
 MISSING=0
 for bin in "$FIELDVIEW_BIN" "$TRACKRECO_BIN"; do
   if [[ ! -x "$bin" ]]; then
-    echo "  [WARN] バイナリが見つかりません: $bin"
-    echo "         compile.sh / compile_track_reco.sh を先に実行してください。"
+    echo "  [WARN] バイナリが見つからない: $bin"
+    echo "         compile.sh / compile_track_reco.sh を先に実行すること"
     MISSING=1
   fi
 done
@@ -108,14 +108,14 @@ if [[ $RUN_OPTIMIZE -eq 1 ]]; then
   echo ""
   echo "[Step 1] optimize_efield 実行中..."
   if [[ ! -x "$OPTIMIZE_BIN" ]]; then
-    echo "  [WARN] $OPTIMIZE_BIN が見つかりません。compile_optimize_efield.sh を実行してください。"
+    echo "  [WARN] $OPTIMIZE_BIN が見つからない。compile_optimize_efield.sh を実行すること"
   else
     "$OPTIMIZE_BIN" 2>&1 | tee "$LOGDIR/optimize.out"
     echo "  [OK] optimize_efield 完了"
   fi
 else
   echo ""
-  echo "[Step 1] optimize_efield はスキップします (-o で有効化)"
+  echo "[Step 1] optimize_efield をスキップする (-o で有効化)"
 fi
 
 # -----------------------------------------------------------------------
@@ -153,7 +153,7 @@ if [[ ! -f "$ANALYZE_SRC" ]]; then
   ANALYZE_SRC=$(find "${WORK}/root" -name "analyze_drift.C" | sort | tail -1)
 fi
 if [[ -z "$ANALYZE_SRC" ]]; then
-  echo "  [ERROR] analyze_drift.C が見つかりません"
+  echo "  [ERROR] analyze_drift.C が見つからない"
   exit 1
 fi
 cp "$ANALYZE_SRC" "$OUTDIR/analyze_drift.C"
@@ -164,7 +164,7 @@ popd > /dev/null
 
 T_HIST_CSV="${OUTDIR}/analysis_L0_prim/t_hist_nt.csv"
 if [[ ! -f "$T_HIST_CSV" ]]; then
-  echo "  [ERROR] t_hist_nt.csv が生成されませんでした"
+  echo "  [ERROR] t_hist_nt.csv が生成されなかった"
   exit 1
 fi
 echo "  [OK] T-L 曲線 CSV 完了 → $T_HIST_CSV"

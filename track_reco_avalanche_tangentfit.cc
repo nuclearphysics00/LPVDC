@@ -529,7 +529,7 @@ int main(int argc, char** argv) {
             
             // --- Angle Cut REMOVED ---
             // フィルタ処理 (continue) を削除しました。
-            // 全ての組み合わせについて計算を行います。
+            // 全ての組み合わせについて計算を行う。
             /*
             double deg = std::atan(a) * 180.0 / M_PI;
             if (deg < 0) deg += 180.0; 

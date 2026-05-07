@@ -21,7 +21,7 @@ mkdir -p "$LOGDIR"
 : > "$LOGDIR/job.log"
 
 # --- 実行ファイル（今回実行するプログラムに変更） ---
-EXE="./track_reco_avalanche_plate" # ★実行ファイルを変更しました
+EXE="./track_reco_avalanche_plate" # 実行ファイル
 
 # =================================================
 # 環境設定（ROOT 6.32 に統一、Qt 不使用、libstdc++ を明示）

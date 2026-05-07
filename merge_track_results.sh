@@ -8,7 +8,7 @@ files=( track_results_job*.root )
 shopt -u nullglob
 
 if [ "${#files[@]}" -eq 0 ]; then
-  echo "[ERROR] track_results_job*.root が見つかりません"
+  echo "[ERROR] track_results_job*.root が見つからない"
   exit 1
 fi
 

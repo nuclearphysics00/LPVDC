@@ -375,11 +375,11 @@ int main(int argc, char** argv) {
     br_reco_a = fit_a; br_reco_b = fit_b;
     br_reco_x0 = (std::abs(fit_a) > 1e-9) ? -fit_b / fit_a : 0.0;
     
-    // ★ ABS calculation
+    // 差分の絶対値を計算する
     br_diff_x0 = std::abs(br_reco_x0 - br_true_x0);
     tree->Fill();
 
-    // ★ Debug Visualization: every 100 events
+    // デバッグ可視化: 100 イベントごとに描画する
     if (iEv % 100 == 0) {
       TCanvas cTrk("cTrk","",1000,780); cTrk.SetGrid();
       TH2D fr("fr", Form("Event %d: a_true=%.3f, b_true=%.3f;X [cm];Y [cm]", iEv, a_true, b_true), 

@@ -8,7 +8,7 @@
 #   -h  このヘルプを表示
 #
 # ============================================================
-# ★★★ CONFIGURATION ★★★
+# CONFIGURATION
 # 参照する run ディレクトリと実行パラメータをここで設定する
 # ============================================================
 
@@ -34,7 +34,7 @@ N_JOBS=10
 START_SEED=1
 
 # ============================================================
-# ★★★ CONFIGURATION ここまで ★★★
+# CONFIGURATION エンド
 # ============================================================
 
 set -euo pipefail
@@ -43,7 +43,7 @@ set -euo pipefail
 if [[ "${1:-}" == "-h" ]]; then
   sed -n '2,10p' "$0"
   echo ""
-  echo "CONFIGURATION はスクリプト冒頭の設定ブロックを直接編集してください。"
+  echo "CONFIGURATION はスクリプト冒頭の設定ブロックを直接編集すること。"
   exit 0
 fi
 
@@ -83,19 +83,19 @@ echo "  T_HIST_CSV   = $T_HIST_CSV"
 echo "============================================================"
 
 if [[ ! -d "$RUN_DIR" ]]; then
-  echo "[ERROR] RUN_DIR が見つかりません: $RUN_DIR" >&2
+  echo "[ERROR] RUN_DIR が見つからない: $RUN_DIR" >&2
   exit 1
 fi
 
 if [[ ! -f "$T_HIST_CSV" ]]; then
-  echo "[ERROR] T-L 曲線 CSV が見つかりません: $T_HIST_CSV" >&2
-  echo "       先に analyze_drift.C を実行して CSV を生成してください。" >&2
+  echo "[ERROR] T-L 曲線 CSV が見つからない: $T_HIST_CSV" >&2
+  echo "       先に analyze_drift.C を実行して CSV を生成すること" >&2
   exit 1
 fi
 
 if [[ ! -x "$TRACKRECO_BIN" ]]; then
-  echo "[ERROR] バイナリが見つかりません: $TRACKRECO_BIN" >&2
-  echo "       compile_track_reco.sh を先に実行してください。" >&2
+  echo "[ERROR] バイナリが見つからない: $TRACKRECO_BIN" >&2
+  echo "       compile_track_reco.sh を先に実行すること" >&2
   exit 1
 fi
 

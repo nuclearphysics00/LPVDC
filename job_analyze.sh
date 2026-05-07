@@ -42,7 +42,7 @@ mkdir -p "$LOGDIR"
 
 # --- merged ROOT の存在確認 ---
 if [[ ! -f "$MERGED" ]]; then
-  echo "[ERROR] merged ROOT が見つかりません: $MERGED" | tee -a "$LOGDIR/analyze.log"
+  echo "[ERROR] merged ROOT が見つからない: $MERGED" | tee -a "$LOGDIR/analyze.log"
   exit 1
 fi
 
@@ -56,7 +56,7 @@ else
 fi
 
 if [[ -z "$ANALYZE_C" ]]; then
-  echo "[ERROR] analyze_drift.C が見つかりません" | tee -a "$LOGDIR/analyze.log"
+  echo "[ERROR] analyze_drift.C が見つからない" | tee -a "$LOGDIR/analyze.log"
   exit 1
 fi
 
@@ -74,7 +74,7 @@ popd > /dev/null
 # --- 出力確認 ---
 T_HIST="${OUTDIR}/analysis_L0_prim/t_hist_nt.csv"
 if [[ ! -f "$T_HIST" ]]; then
-  echo "[ERROR] t_hist_nt.csv が生成されませんでした: $T_HIST" | tee -a "$LOGDIR/analyze.log"
+  echo "[ERROR] t_hist_nt.csv が生成されなかった: $T_HIST" | tee -a "$LOGDIR/analyze.log"
   exit 1
 fi
 

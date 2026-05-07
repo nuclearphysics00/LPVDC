@@ -4,7 +4,7 @@
 //  - ガス圧は 0.1 atm (= 76 Torr) に上書き
 //  - E/p は atm ベース（V/(cm*atm)）
 //  - ROOT の GUI で軸レンジなどを自由に調整できる
-//  - ★α≈0 から立ち上がる E のしきい値もターミナルに表示する★
+//  - アイオン化係数 α≈0 になる郊電場しきい値もターミナルに表示する
 
 #include <vector>
 #include <cmath>
@@ -170,7 +170,7 @@ void gas_alpha_v_vsE(const char* gasfile) {
     }
   }
 
-  // ★ 5) α ≈ 0 から立ち上がる E のしきい値を推定
+  // 5) アイオン化係数 α ≈0 になる駻電場しきい値を推定する
   const double Eth = FindEthreshold(E_log, alpha_log, 1e-3); // tol=1e-3 [1/cm] くらい
   if (Eth > 0.0) {
     const double Eth_overP_torr = Eth / P_torr;

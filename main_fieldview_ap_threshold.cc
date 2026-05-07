@@ -37,7 +37,7 @@
 #include "Garfield/AvalancheMC.hh"
 #include "Garfield/ViewField.hh"
 #include "Garfield/FundamentalConstants.hh"  
-#include "Garfield/ViewDrift.hh" // ★これを追加
+#include "Garfield/ViewDrift.hh" // ドリフト可視化ビューア
 
 
 #include "detector_geometry.hh"
@@ -87,7 +87,7 @@ static void DrawElectrodes(const Detector::Geometry& g) {
     const bool isAnode = nm.find("anode") != std::string::npos;
     const bool isPW    = nm.find("pw")    != std::string::npos;
 
-    // ★ 周期設定がOFFならコピーを展開せず、自分自身だけを描画
+    // 周期設定が無効な場合は展開せず、登録座標のみを描画
     if (!g.periodicX) {
       const double x = e.x0; 
       if (x < xmin || x > xmax) continue;
@@ -151,7 +151,7 @@ struct WireNearest {
   bool   hasWire;
 };
 
-// ★ 周期設定OFFに対応した最寄りワイヤー探索
+// 周期設定の有無に対応した最寄りワイヤ探索
 static WireNearest NearestWireSurface(const Detector::Geometry& g, double x, double y){
   WireNearest out;
   out.d_surface_cm = 1e300; out.r_cm = 0.0; out.xw_cm = 0.0; out.yw_cm = 0.0; out.name = ""; out.hasWire = false;
@@ -448,7 +448,7 @@ int main(int argc, char** argv) {
 
     sensorRnd.ClearSignal();
 
-    // --- ★ Debug Plot: ViewDrift setup ★ ---
+    // --- Debug Plot: ViewDrift setup ---
     #ifdef DEBUG_WAVEFORM
         ViewDrift driftView;
         if (visited_evt == 1 && SHARD_ID == 0) {
@@ -457,7 +457,7 @@ int main(int argc, char** argv) {
     #endif
 
     amcRnd.DriftElectron(x, y, 0.0, 0.0);
-    // --- ★ Debug Plot: Draw Avalanche Tracks ★ ---
+    // --- Debug Plot: Draw Avalanche Tracks ---
     #ifdef DEBUG_WAVEFORM
         if (visited_evt == 1  && SHARD_ID == 0) {
             TCanvas cClEnd("cClEnd", "cluster endpoint tracks", 1100, 850);
@@ -530,7 +530,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // --- ★ Debug Waveform Plot ★ ---
+    // --- Debug Waveform Plot ---
     #ifdef DEBUG_WAVEFORM
         if (visited_evt == 1 && SHARD_ID == 0) {
             for(const auto& a_name : anode_names) {

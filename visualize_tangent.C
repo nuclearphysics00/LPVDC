@@ -5,7 +5,7 @@
 // 反復(Iteration)が進むごとに、
 // 1. 直線（赤線）の角度が変わる
 // 2. それに合わせて、接点（赤丸）が円周上を滑るように移動する
-// 様子を確認してください。
+// 様子を確認すること。
 
 #include "TCanvas.h"
 #include "TH2D.h"
@@ -85,7 +85,7 @@ void visualize_tangent() {
             // 符号の決定 (直線が上なら+1, 下なら-1)
             double sign = (dist > 0) ? 1.0 : -1.0;
 
-            // ★ 接点の計算 ★ (直線の角度によって場所が変わる！)
+            // 接点の計算（直線の角度によって位置が変わる）
             double tx = h.x + sign * h.r * nx;
             double ty = h.y + sign * h.r * ny;
 

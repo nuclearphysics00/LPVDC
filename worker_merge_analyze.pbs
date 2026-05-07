@@ -58,7 +58,7 @@ MERGED="${OUTDIR}/grid_times.merged.root"
 SHARDS=( "${OUTDIR}"/grid_times.shard*.root )
 
 if [ "${#SHARDS[@]}" -eq 0 ]; then
-  echo "[ERROR] シャードファイルが見つかりません: ${OUTDIR}/grid_times.shard*.root"
+  echo "[ERROR] シャードファイルが見つからない: ${OUTDIR}/grid_times.shard*.root"
   exit 1
 fi
 
@@ -77,7 +77,7 @@ elif [ -f "${OUTDIR}/analyze_drift.C" ]; then
 else
   LATEST=$(find "root" -name "analyze_drift.C" -not -path "${OUTDIR}/*" 2>/dev/null | sort | tail -1)
   if [ -z "$LATEST" ]; then
-    echo "[ERROR] analyze_drift.C が見つかりません"
+    echo "[ERROR] analyze_drift.C が見つからない"
     exit 1
   fi
   cp "$LATEST" "${OUTDIR}/analyze_drift.C"
@@ -94,7 +94,7 @@ popd > /dev/null
 for SUBDIR in analysis_L0_prim analysis_L0_all; do
   CSV="${OUTDIR}/${SUBDIR}/t_hist_nt.csv"
   if [ ! -f "$CSV" ]; then
-    echo "[WARN] ${CSV} が生成されませんでした"
+    echo "[WARN] ${CSV} が生成されなかった"
   else
     echo "[OK] T-L CSV: ${CSV}"
   fi

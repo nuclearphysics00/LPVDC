@@ -20,7 +20,7 @@ inline std::pair<int,int> rational_approx(double r, int Nmax=24) {
   return {best_m, best_n};
 }
 
-// ★ 追加：セル幅と本数を整合的に決める（PWが重ならない L を返す）
+// セル幅とワイヤ本数を整合的に算出するヘルパー（PW が重ならない L を返す）
 struct PitchPlan {
   double L;         // [cm] セル幅
   double margin;    // [cm] 境界→PW 距離 m = L/2 - d
@@ -71,7 +71,7 @@ inline Geometry PAP_WireCathode_Periodic(
     // オプション: PW をアノードと等電位にするか
     bool pwSameAsAnode = false
 ) {
-  // ★ 変更点：L を「共通周期×必要倍数」で決め、PW重なりを回避
+  // L を「共通周期×必要倍数」で算出し、PW 重複を回避する
   const PitchPlan plan = compute_pitch_plan(pitchSense, pitchCath, pwOffset);
   const double L = plan.L;
 
@@ -96,7 +96,7 @@ inline Geometry PAP_WireCathode_Periodic(
     return std::pair<int,int>(i_min, i_max);
   };
 
-  // --- 上下カソード列：アンカー = cathPhase（★ pitchCath は指定通り・独立）
+  // 上下カソード列：アンカー = cathPhase（pitchCath は指定値をそのまま使用）
   {
     const auto [i_min, i_max] = index_range(pitchCath, cathPhase);
     for (int i = i_min; i <= i_max; ++i) {

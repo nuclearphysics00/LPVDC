@@ -147,7 +147,7 @@ static void AddSeedsUniformOnLine(
   }
 }
 
-// ★ 修正点: 名前を保持できるように構造体を拡張
+// 名前フィールドを追加した拡張構造体
 struct WireNearest {
   double d_surface_cm;   // 表面までの距離（負なら「食い込み」）
   double r_cm;           // そのワイヤ半径
@@ -156,7 +156,7 @@ struct WireNearest {
   bool   hasWire;        // 幾何にワイヤがあるか
 };
 
-// ★ 修正点: 最寄りワイヤを特定した際、その設計上の名前を格納するように変更
+// 最寄りワイヤを特定した際、設計上の名前を格納する
 static WireNearest NearestWireSurface(const Detector::Geometry& g, double x, double y){
   WireNearest out;
   out.d_surface_cm = 1e300;
@@ -655,7 +655,7 @@ int main(int argc, char** argv) {
       double xa,ya,za,ta, xb,yb,zb,tb; int st=0;
       amcRnd.GetElectronEndpoint(j, xa,ya,za,ta, xb,yb,zb,tb, st);
       
-      // ★ 修正点: 終点 (xb, yb) から最寄りワイヤを特定し名前をチェック
+      // 終点 (xb, yb) から最寄りワイヤを特定し名前を確認する
       WireNearest nw_end = NearestWireSurface(geo, xb, yb);
       
       // 最寄りワイヤが "Anode" (大文字小文字問わず) である場合のみ記録
@@ -679,7 +679,7 @@ int main(int argc, char** argv) {
       double xa,ya,za,ta, xb,yb,zb,tb; int st=0;
       amcRnd.GetElectronEndpoint(j, xa,ya,za,ta, xb,yb,zb,tb, st);
 
-      // ★ 修正点: 同様にアバランシェ内の各電子についても Anode 到達チェック
+      // アバランシェ内の各電子についても Anode 到達を確認する
       WireNearest nw_end = NearestWireSurface(geo, xb, yb);
       
       if (nw_end.hasWire && (nw_end.name.find("Anode") != std::string::npos || nw_end.name.find("anode") != std::string::npos)) {

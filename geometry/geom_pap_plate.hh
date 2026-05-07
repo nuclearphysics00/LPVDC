@@ -21,7 +21,7 @@ inline Detector::Geometry PAP_PlaneCathode_Periodic(
     //double vAn = 0.0, double vPW = -300, double vCat = -5000.0, // * 川畑さんの論文値
 
     bool pwSameAsAnode = false,
-    int nWires = 4            // ★ 追加: 中心から左右に配置するセル(アノード)の数
+    int nWires = 4            // 中心から左右に配置するセル（アノード）の数
 ) {
   const double L   = pitchSense;      // 周期（=A–A）
   const double off = L / 3.0;         // A–P./
@@ -29,7 +29,7 @@ inline Detector::Geometry PAP_PlaneCathode_Periodic(
 
    // vPW = vCat * (rPW / gap - rAn / gap) / (1.0 - rAn / gap);
 
-  // ★ スーパーセル全体の幅を計算
+  // Super-Cell 全体幅を計算する
   const int totalCells = 2 * nWires + 1;
   const double W = totalCells * L;
 
@@ -38,8 +38,8 @@ inline Detector::Geometry PAP_PlaneCathode_Periodic(
       L, off, vPW, vCat, -nWires, nWires, W);
 
   Detector::Geometry g;
-  g.periodicX = true; // ★ 周期境界をONに戻す！
-  g.pitchX    = W;    // ★ スーパーセルの幅を新しい周期に設定
+  g.periodicX = true; // 周期境界条件を有効化（Super-Cell 方式）
+  g.pitchX    = W;    // Super-Cell 幅を周期として設定
 
   // 検出器の全体幅を設定 (スーパーセルの幅に合わせる)
   g.xmin = -W / 2.0;
@@ -48,7 +48,7 @@ inline Detector::Geometry PAP_PlaneCathode_Periodic(
 
   // カソード（上下）
   // 平面電極(PlaneY)はGarfield++内部でX方向に無限に広がるため、1つずつでOK
-  // ※ピッチ引数にはLの代わりにスーパーセル幅Wを渡しておく
+  // ピッチ引数には L ではなく Super-Cell 幅 W を渡す
   g.electrodes.push_back(Detector::Electrode{
       Detector::ElectrodeKind::PlaneY, 0.0, +gap, vCat, 0.0, W, "CathodeTop"});
   g.electrodes.push_back(Detector::Electrode{
@@ -56,7 +56,7 @@ inline Detector::Geometry PAP_PlaneCathode_Periodic(
 
   const double vPW_eff = pwSameAsAnode ? vAn : vPW;
   
-  // ★ -nWires から +nWires まで、すべて固有の名前で1本ずつ配置する
+  // -nWires から +nWires まで各ワイヤを固有名で順に配置する
   for (int i = -nWires; i <= nWires; ++i) {
       // 1セル分（P-A-P）の各ワイヤーの座標を計算
       double xa   = phase + i * L;          // アノード
