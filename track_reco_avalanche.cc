@@ -59,7 +59,7 @@
 #include "geometry/eval_uniform.hh"
 #include "eval_maps.hh"
 
-// --- Debug Macro Switch ---------------------------------------------------
+// --- ★ Debug Macro Switch ★ ------------------------------------------------
 // #define DEBUG_WAVEFORM  // 問題 No.3 修正: 本番実行時は無効化 (コンパイル時 -DDEBUG_WAVEFORM で有効化)
 // ----------------------------------------------------------------------------
 
@@ -230,6 +230,92 @@ static fs::path GuessRunDirFromCsv(const fs::path& csvPath) {
   return p;
 }
 
+static std::string SanitizePathComponent(std::string s) {
+  if (s.empty()) return "manual";
+  for (char& c : s) {
+    const bool ok =
+        std::isalnum(static_cast<unsigned char>(c)) ||
+        c == '_' || c == '-' || c == '.';
+    if (!ok) c = '_';
+  }
+  return s;
+}
+
+static std::string ResolveArrayId() {
+  if (const char* p = std::getenv("PBS_ARRAY_ID")) return SanitizePathComponent(p);
+  if (const char* p = std::getenv("PBS_JOBID"))    return SanitizePathComponent(p);
+  return "manual";
+}
+
+struct TrackSegment {
+  double x0 = 0.0;
+  double y0 = 0.0;
+  double x1 = 0.0;
+  double y1 = 0.0;
+  bool valid = false;
+};
+
+static TrackSegment ClipTrackToActiveArea(const Detector::Geometry& geo,
+                                          double slope,
+                                          double intercept) {
+  constexpr double kEps = 1.0e-9;
+  std::vector<std::pair<double, double>> points;
+
+  auto inside = [&](double x, double y) {
+    return x >= geo.xmin - kEps && x <= geo.xmax + kEps &&
+           y >= geo.ymin - kEps && y <= geo.ymax + kEps;
+  };
+  auto pushPoint = [&](double x, double y) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !inside(x, y)) return;
+    for (const auto& [px, py] : points) {
+      if (std::hypot(px - x, py - y) < 1.0e-7) return;
+    }
+    points.push_back({x, y});
+  };
+
+  pushPoint(geo.xmin, slope * geo.xmin + intercept);
+  pushPoint(geo.xmax, slope * geo.xmax + intercept);
+  if (std::abs(slope) < kEps) {
+    if (intercept >= geo.ymin - kEps && intercept <= geo.ymax + kEps) {
+      pushPoint(geo.xmin, intercept);
+      pushPoint(geo.xmax, intercept);
+    }
+  } else {
+    pushPoint((geo.ymin - intercept) / slope, geo.ymin);
+    pushPoint((geo.ymax - intercept) / slope, geo.ymax);
+  }
+
+  TrackSegment segment;
+  if (points.size() < 2) return segment;
+
+  size_t iBest = 0;
+  size_t jBest = 1;
+  double bestDistance = -1.0;
+  for (size_t i = 0; i < points.size(); ++i) {
+    for (size_t j = i + 1; j < points.size(); ++j) {
+      const double distance = std::hypot(points[j].first - points[i].first,
+                                         points[j].second - points[i].second);
+      if (distance > bestDistance) {
+        bestDistance = distance;
+        iBest = i;
+        jBest = j;
+      }
+    }
+  }
+
+  segment.x0 = points[iBest].first;
+  segment.y0 = points[iBest].second;
+  segment.x1 = points[jBest].first;
+  segment.y1 = points[jBest].second;
+  segment.valid = true;
+  if (segment.x0 > segment.x1 ||
+      (std::abs(segment.x0 - segment.x1) < kEps && segment.y0 > segment.y1)) {
+    std::swap(segment.x0, segment.x1);
+    std::swap(segment.y0, segment.y1);
+  }
+  return segment;
+}
+
 struct GainPlotInfo {
     int wType; double xw, yw, gain; int n_primary, n_total;
 };
@@ -238,10 +324,10 @@ struct GainPlotInfo {
 int main(int argc, char** argv) {
   TApplication app("app", &argc, argv);
   
-  // バッチジョブ向けにバッチモードを有効化し、ウィンドウ表示を抑制する
+  // ★ バッチジョブ向けに画面の乱立を防ぐためバッチモードをON(非表示)にする
   gROOT->SetBatch(kTRUE);  gStyle->SetOptStat(0);
 
-  // 引数処理: 第1引数=ジョブID(シード値), 第2引数=時間ヒストグラム
+  // ★ 引数処理: 第1引数=ジョブID(シード値), 第2引数=時間ヒストグラム
   int job_seed = 1;
   const char* timeHistFile = ""; // 問題 No.7 修正: デフォルト空文字列—必ず argv[2] でパスを指定すること
 
@@ -260,6 +346,7 @@ int main(int argc, char** argv) {
 
   std::printf("[env] Job Seed (ID) = %d\n", job_seed);
   std::printf("[env] timeHistFile=%s\n", timeHistFile);
+  std::printf("[env] Array ID = %s\n", ResolveArrayId().c_str());
 
   // 1. ジオメトリとカソード電圧 (vCat) 取得
   MediumMagboltz gas; gas.LoadGasFile("ic4H10_100_0.1atm.gas");
@@ -281,15 +368,17 @@ int main(int argc, char** argv) {
   fs::path csvPath(timeHistFile);
   fs::path runDir  = GuessRunDirFromCsv(csvPath);
   char vol_dir_name[64]; std::snprintf(vol_dir_name, sizeof(vol_dir_name), "vCat_%.0fV", vCat_val);
-  fs::path baseOutDir = runDir / vol_dir_name;
-  std::string figDir = (baseOutDir / ("png_" + std::string(geomTag))).string();
+  const std::string arrayId = ResolveArrayId();
+  fs::path vCatDir = runDir / vol_dir_name;
+  fs::path arrayOutDir = vCatDir / ("array_" + arrayId);
+  std::string figDir = (arrayOutDir / ("png_" + std::string(geomTag))).string();
   gSystem->mkdir(figDir.c_str(), kTRUE);
   fs::create_directories(fs::path(figDir) / "waveform");
   fs::create_directories(fs::path(figDir) / "gain");
-  fs::path trackDir = baseOutDir / "track";
+  fs::path trackDir = vCatDir / "track";
   fs::create_directories(trackDir);
 
-  // 3. データ記録用 ROOT ファイルのセットアップ（ファイル名に job_seed を付与）
+  // 3. データ記録用ROOTファイルセットアップ (★ファイル名にjob_seedを付与)
   std::string rootOutPath = (trackDir / Form("track_results_job%d.root", job_seed)).string();
   TFile* fOut = new TFile(rootOutPath.c_str(), "RECREATE"); fOut->cd(); 
   TTree* tree = new TTree("tree", "Track Reconstruction Stats"); tree->SetDirectory(fOut); 
@@ -315,7 +404,7 @@ int main(int argc, char** argv) {
   const int nSigBins = std::max(200, (int)std::ceil((tmax_sig - t0_sig_ns) / dt_sig_ns));
   sensor.SetTimeWindow(t0_sig_ns, dt_sig_ns, nSigBins);
 
-  // 乱数シード値を設定し、1ジョブあたり1イベントとして実行する
+  // ★ シード値を設定し、1ジョブあたり1イベントにする
   TRandom3 gen(job_seed); 
   
   std::string driftRootOutPath = (trackDir / Form("drift_info_job%d.root", job_seed)).string();
@@ -362,7 +451,7 @@ int main(int argc, char** argv) {
   // =========================================================
   // (A) Map Gen (Field Lines & Maps)
   // =========================================================
-  // ジョブ ID が 1 の場合のみ重いマップ生成を実行する
+  // ★ シード1のジョブでのみ重いマップ生成を行う
   bool make_maps = (job_seed == 1); 
   if (make_maps) {
     std::printf("[map] Generating high-resolution field maps & lines...\n");
@@ -430,7 +519,7 @@ int main(int argc, char** argv) {
     mg_anode->SetTitle("Electric Field Profile at Anode X positions;Y [cm];|E| [V/cm]");
     
     int color_idx = 1;
-    // グラフ描画後に NDC 座標で配置するためのテキスト情報を一時保存する構造体
+    // ★ 描画用のテキスト情報を一時保存する構造体
     struct LabelInfo { std::string text; int color; };
     std::vector<LabelInfo> labels10k;
 
@@ -465,7 +554,7 @@ int main(int argc, char** argv) {
         gr->SetTitle(Form("Anode at x = %.2f cm", xw));
         gr->SetLineColor(color_idx); gr->SetLineWidth(2); mg_anode->Add(gr, "L");
         
-        // テキスト情報をベクターに追加する
+        // ★ テキスト情報をベクターに保存しておく
         if (found_10k) {
             labels10k.push_back({Form("x=%.2f: Y [%.4f, %.4f] cm", xw, y_10k_min, y_10k_max), color_idx});
         }
@@ -477,11 +566,11 @@ int main(int argc, char** argv) {
 
     cProfileAnode->cd();
     if (mg_anode->GetListOfGraphs() != nullptr) {
-        // グラフ本体と軸を先に描画して座標系を確定する
+        // ★ 先にグラフ本体と軸を描画（ここで座標系が確定する）
         mg_anode->Draw("A"); 
         cProfileAnode->BuildLegend(0.65, 0.75, 0.90, 0.90);
 
-        // グラフ描画後に NDC 座標（0～1）でテキストを配置する
+        // ★ グラフ描画後にテキストを NDC (0~1の相対座標) で画面に配置する
         TLatex latex_10k; 
         latex_10k.SetNDC(); // 絶対座標系を有効化
         latex_10k.SetTextSize(0.025); 
@@ -648,7 +737,7 @@ int main(int argc, char** argv) {
     cE->SetRightMargin(0.15); cE->SetGrid(); cE->SetLogz(1);
     if (minPos < 1e97) hE.SetMinimum(minPos * 0.9); hE.SetMaximum(maxVal_global * 1.05);
     
-    // 描画範囲を設定する
+    // ★ ここで描画レンジを絞る（ズーム）
     hE.GetXaxis()->SetRangeUser(-0.2, 0.2);
     hE.GetYaxis()->SetRangeUser(-0.25, 0.25);
     
@@ -710,8 +799,12 @@ int main(int argc, char** argv) {
         const double a_true = std::tan(true_angle_deg * M_PI / 180.0);
         const double b_true = 0.25 + gen.Uniform(-0.05, 0.05); 
         
-        const double x_min_trk = geo.xmin; const double x_max_trk = geo.xmax;
         const int nClusters = 879; // 問題 No.6: iC4H10 約 350/cm × 2.5cm drift gap の推定値 (2707: wire cath 構成向け)
+        const auto activeTrack = ClipTrackToActiveArea(geo, a_true, b_true);
+        if (!activeTrack.valid) {
+          std::fprintf(stderr, "[WARN] true track is outside the active area. Skip event %d.\n", ev);
+          continue;
+        }
 
         AvalancheMC amcTrack; amcTrack.SetSensor(&sensor);
         TryEnableSignalCalculation(amcTrack); amcTrack.UseWeightingPotential(true);
@@ -722,9 +815,9 @@ int main(int argc, char** argv) {
         std::vector<ClusterInfo> clusters;
         for (int i = 0; i < nClusters; ++i) {
           const double frac = gen.Uniform(0.0, 1.0); 
-          const double x = x_min_trk + frac * (x_max_trk - x_min_trk);
-          const double y = a_true * x + b_true;
-          if (y >= geo.ymin && y <= geo.ymax) clusters.push_back({x, y});
+          const double x = activeTrack.x0 + frac * (activeTrack.x1 - activeTrack.x0);
+          const double y = activeTrack.y0 + frac * (activeTrack.y1 - activeTrack.y0);
+          clusters.push_back({x, y});
         }
 
         std::map<std::string, GainPlotInfo> globalGainMap;

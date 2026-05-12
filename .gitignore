@@ -47,6 +47,9 @@ root/
 onedrift/
 png_dist_threshold/
 
+# ---- root ディレクトリ内の CSV ファイルは追跡対象にする ----
+!root/**/*.csv
+
 # ---- PBS ジョブ出力 ----
 garfield_sim.*
 *.e[0-9]*

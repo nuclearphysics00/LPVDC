@@ -188,6 +188,92 @@ static fs::path GuessRunDirFromCsv(const fs::path& csvPath) {
   return p;
 }
 
+static std::string SanitizePathComponent(std::string s) {
+  if (s.empty()) return "manual";
+  for (char& c : s) {
+    const bool ok =
+        std::isalnum(static_cast<unsigned char>(c)) ||
+        c == '_' || c == '-' || c == '.';
+    if (!ok) c = '_';
+  }
+  return s;
+}
+
+static std::string ResolveArrayId() {
+  if (const char* p = std::getenv("PBS_ARRAY_ID")) return SanitizePathComponent(p);
+  if (const char* p = std::getenv("PBS_JOBID"))    return SanitizePathComponent(p);
+  return "manual";
+}
+
+struct TrackSegment {
+  double x0 = 0.0;
+  double y0 = 0.0;
+  double x1 = 0.0;
+  double y1 = 0.0;
+  bool valid = false;
+};
+
+static TrackSegment ClipTrackToActiveArea(const Detector::Geometry& geo,
+                                          double slope,
+                                          double intercept) {
+  constexpr double kEps = 1.0e-9;
+  std::vector<std::pair<double, double>> points;
+
+  auto inside = [&](double x, double y) {
+    return x >= geo.xmin - kEps && x <= geo.xmax + kEps &&
+           y >= geo.ymin - kEps && y <= geo.ymax + kEps;
+  };
+  auto pushPoint = [&](double x, double y) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !inside(x, y)) return;
+    for (const auto& [px, py] : points) {
+      if (std::hypot(px - x, py - y) < 1.0e-7) return;
+    }
+    points.push_back({x, y});
+  };
+
+  pushPoint(geo.xmin, slope * geo.xmin + intercept);
+  pushPoint(geo.xmax, slope * geo.xmax + intercept);
+  if (std::abs(slope) < kEps) {
+    if (intercept >= geo.ymin - kEps && intercept <= geo.ymax + kEps) {
+      pushPoint(geo.xmin, intercept);
+      pushPoint(geo.xmax, intercept);
+    }
+  } else {
+    pushPoint((geo.ymin - intercept) / slope, geo.ymin);
+    pushPoint((geo.ymax - intercept) / slope, geo.ymax);
+  }
+
+  TrackSegment segment;
+  if (points.size() < 2) return segment;
+
+  size_t iBest = 0;
+  size_t jBest = 1;
+  double bestDistance = -1.0;
+  for (size_t i = 0; i < points.size(); ++i) {
+    for (size_t j = i + 1; j < points.size(); ++j) {
+      const double distance = std::hypot(points[j].first - points[i].first,
+                                         points[j].second - points[i].second);
+      if (distance > bestDistance) {
+        bestDistance = distance;
+        iBest = i;
+        jBest = j;
+      }
+    }
+  }
+
+  segment.x0 = points[iBest].first;
+  segment.y0 = points[iBest].second;
+  segment.x1 = points[jBest].first;
+  segment.y1 = points[jBest].second;
+  segment.valid = true;
+  if (segment.x0 > segment.x1 ||
+      (std::abs(segment.x0 - segment.x1) < kEps && segment.y0 > segment.y1)) {
+    std::swap(segment.x0, segment.x1);
+    std::swap(segment.y0, segment.y1);
+  }
+  return segment;
+}
+
 // ---- main ----------------------------------------------------
 int main(int argc, char** argv) {
   TApplication app("app", &argc, argv);
@@ -207,7 +293,9 @@ int main(int argc, char** argv) {
 
   fs::path csvPath(timeHistFile);
   fs::path runDir = GuessRunDirFromCsv(csvPath);
-  std::string figDir = (runDir / ("png_" + std::string(geomTag))).string();
+  const std::string arrayId = ResolveArrayId();
+  fs::path arrayOutDir = runDir / ("array_" + arrayId);
+  std::string figDir = (arrayOutDir / ("png_" + std::string(geomTag))).string();
   gSystem->mkdir(figDir.c_str(), kTRUE);
   fs::path waveDir = fs::path(figDir) / "waveform";
   fs::create_directory(waveDir);
@@ -215,7 +303,9 @@ int main(int argc, char** argv) {
   auto saveFig = [&](TCanvas& c, const char* fname){ c.SaveAs((figDir + "/" + fname).c_str()); };
 
   // --- 2. TTree for Statistical Analysis ---
-  TFile* rootOut = new TFile((runDir / "reco_analysis.root").c_str(), "RECREATE");
+  fs::path trackDir = runDir / "track";
+  fs::create_directories(trackDir);
+  TFile* rootOut = new TFile((trackDir / "reco_analysis.root").c_str(), "RECREATE");
   TTree* tree = new TTree("tree", "Track Reconstruction Multi-Event");
   double br_true_a, br_true_b, br_true_x0;
   double br_reco_a, br_reco_b, br_reco_x0;
@@ -268,8 +358,12 @@ int main(int argc, char** argv) {
     const double a_true = std::tan(angle_deg * M_PI / 180.0);
     const double b_true = 0.15 + rng.Uniform(0.20);
 
-    const double x_min_trk = geo.xmin, x_max_trk = geo.xmax;
     const int nClusters = 3062;
+    const auto activeTrack = ClipTrackToActiveArea(geo, a_true, b_true);
+    if (!activeTrack.valid) {
+      std::fprintf(stderr, "[WARN] true track is outside the active area. Skip event %d.\n", iEv);
+      continue;
+    }
 
     AvalancheMC amcTrack; amcTrack.SetSensor(&sensor);
     TryEnableSignalCalculation(amcTrack); amcTrack.UseWeightingPotential(true);
@@ -280,9 +374,8 @@ int main(int argc, char** argv) {
 
     for (int i = 0; i < nClusters; ++i) {
       const double frac = (i + 0.5) / nClusters;
-      const double x = x_min_trk + frac * (x_max_trk - x_min_trk);
-      const double y = a_true * x + b_true;
-      if (y < geo.ymin || y > geo.ymax) continue;
+      const double x = activeTrack.x0 + frac * (activeTrack.x1 - activeTrack.x0);
+      const double y = activeTrack.y0 + frac * (activeTrack.y1 - activeTrack.y0);
       auto nw = NearestWireSurface(geo, x, y, readoutLabel);
       if (!nw.hasWire) continue;
       int wireIdx = std::round(nw.xw_cm / geo.pitchX);
@@ -375,11 +468,11 @@ int main(int argc, char** argv) {
     br_reco_a = fit_a; br_reco_b = fit_b;
     br_reco_x0 = (std::abs(fit_a) > 1e-9) ? -fit_b / fit_a : 0.0;
     
-    // 差分の絶対値を計算する
+    // ★ ABS calculation
     br_diff_x0 = std::abs(br_reco_x0 - br_true_x0);
     tree->Fill();
 
-    // デバッグ可視化: 100 イベントごとに描画する
+    // ★ Debug Visualization: every 100 events
     if (iEv % 100 == 0) {
       TCanvas cTrk("cTrk","",1000,780); cTrk.SetGrid();
       TH2D fr("fr", Form("Event %d: a_true=%.3f, b_true=%.3f;X [cm];Y [cm]", iEv, a_true, b_true), 

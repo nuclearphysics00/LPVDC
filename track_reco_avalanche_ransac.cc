@@ -227,6 +227,92 @@ static fs::path GuessRunDirFromCsv(const fs::path& csvPath) {
   return p;
 }
 
+static std::string SanitizePathComponent(std::string s) {
+  if (s.empty()) return "manual";
+  for (char& c : s) {
+    const bool ok =
+        std::isalnum(static_cast<unsigned char>(c)) ||
+        c == '_' || c == '-' || c == '.';
+    if (!ok) c = '_';
+  }
+  return s;
+}
+
+static std::string ResolveArrayId() {
+  if (const char* p = std::getenv("PBS_ARRAY_ID")) return SanitizePathComponent(p);
+  if (const char* p = std::getenv("PBS_JOBID"))    return SanitizePathComponent(p);
+  return "manual";
+}
+
+struct TrackSegment {
+  double x0 = 0.0;
+  double y0 = 0.0;
+  double x1 = 0.0;
+  double y1 = 0.0;
+  bool valid = false;
+};
+
+static TrackSegment ClipTrackToActiveArea(const Detector::Geometry& geo,
+                                          double slope,
+                                          double intercept) {
+  constexpr double kEps = 1.0e-9;
+  std::vector<std::pair<double, double>> points;
+
+  auto inside = [&](double x, double y) {
+    return x >= geo.xmin - kEps && x <= geo.xmax + kEps &&
+           y >= geo.ymin - kEps && y <= geo.ymax + kEps;
+  };
+  auto pushPoint = [&](double x, double y) {
+    if (!std::isfinite(x) || !std::isfinite(y) || !inside(x, y)) return;
+    for (const auto& [px, py] : points) {
+      if (std::hypot(px - x, py - y) < 1.0e-7) return;
+    }
+    points.push_back({x, y});
+  };
+
+  pushPoint(geo.xmin, slope * geo.xmin + intercept);
+  pushPoint(geo.xmax, slope * geo.xmax + intercept);
+  if (std::abs(slope) < kEps) {
+    if (intercept >= geo.ymin - kEps && intercept <= geo.ymax + kEps) {
+      pushPoint(geo.xmin, intercept);
+      pushPoint(geo.xmax, intercept);
+    }
+  } else {
+    pushPoint((geo.ymin - intercept) / slope, geo.ymin);
+    pushPoint((geo.ymax - intercept) / slope, geo.ymax);
+  }
+
+  TrackSegment segment;
+  if (points.size() < 2) return segment;
+
+  size_t iBest = 0;
+  size_t jBest = 1;
+  double bestDistance = -1.0;
+  for (size_t i = 0; i < points.size(); ++i) {
+    for (size_t j = i + 1; j < points.size(); ++j) {
+      const double distance = std::hypot(points[j].first - points[i].first,
+                                         points[j].second - points[i].second);
+      if (distance > bestDistance) {
+        bestDistance = distance;
+        iBest = i;
+        jBest = j;
+      }
+    }
+  }
+
+  segment.x0 = points[iBest].first;
+  segment.y0 = points[iBest].second;
+  segment.x1 = points[jBest].first;
+  segment.y1 = points[jBest].second;
+  segment.valid = true;
+  if (segment.x0 > segment.x1 ||
+      (std::abs(segment.x0 - segment.x1) < kEps && segment.y0 > segment.y1)) {
+    std::swap(segment.x0, segment.x1);
+    std::swap(segment.y0, segment.y1);
+  }
+  return segment;
+}
+
 // ---- main ----------------------------------------------------
 int main(int argc, char** argv) {
   TApplication app("app", &argc, argv);
@@ -242,7 +328,9 @@ int main(int argc, char** argv) {
   #endif
   fs::path csvPath(timeHistFile);
   fs::path runDir  = GuessRunDirFromCsv(csvPath);
-  std::string figDir = (runDir / ("png_" + std::string(geomTag))).string();
+  const std::string arrayId = ResolveArrayId();
+  fs::path arrayOutDir = runDir / ("array_" + arrayId);
+  std::string figDir = (arrayOutDir / ("png_" + std::string(geomTag))).string();
   const char* p_fig = std::getenv("FIG_DIR");
   if (p_fig && std::strlen(p_fig)) figDir = p_fig;
   gSystem->mkdir(figDir.c_str(), kTRUE);
@@ -367,9 +455,12 @@ int main(int argc, char** argv) {
         // 切片を0.25中心に±0.05程度揺らす
         const double b_true = 0.25 + gen.Uniform(-0.05, 0.05); 
         
-        const double x_min_trk = geo.xmin;
-        const double x_max_trk = geo.xmax;
         const int    nClusters = 3062;
+        const auto activeTrack = ClipTrackToActiveArea(geo, a_true, b_true);
+        if (!activeTrack.valid) {
+          std::fprintf(stderr, "[WARN] true track is outside the active area. Skip event %d.\n", ev);
+          continue;
+        }
 
         AvalancheMC amcTrack;
         amcTrack.SetSensor(&sensor);
@@ -389,10 +480,8 @@ int main(int argc, char** argv) {
 
         for (int i = 0; i < nClusters; ++i) {
           const double frac = (i + 0.5) / nClusters;
-          const double x = x_min_trk + frac * (x_max_trk - x_min_trk);
-          const double y = a_true * x + b_true;
-
-          if (y < geo.ymin || y > geo.ymax) continue;
+          const double x = activeTrack.x0 + frac * (activeTrack.x1 - activeTrack.x0);
+          const double y = activeTrack.y0 + frac * (activeTrack.y1 - activeTrack.y0);
           
           auto nw = NearestWireSurface(geo, x, y, readoutLabel);
           if (!nw.hasWire) continue;
@@ -442,7 +531,7 @@ int main(int argc, char** argv) {
               gW.SetLineWidth(1); gW.SetLineColor(kBlue);
               gW.Draw("AL");
 
-              // 閾値線を正負両方向に描画する
+              // ★修正: 正負両方の閾値線を描画する
               TLine *lth_p = new TLine(t0_sig_ns, signalThreshold, tmax_sig, signalThreshold);
               lth_p->SetLineColor(kRed); lth_p->SetLineStyle(2); lth_p->Draw("same");
 
@@ -619,7 +708,7 @@ int main(int argc, char** argv) {
         fReco.SetLineColor(kRed); fReco.SetLineWidth(2);
         fReco.Draw("same");
 
-        // 接線拥点の確認用プロット（赤点）
+        // ★ 計算された「接点」の確認プロット (赤点)
         {
             double denom = std::sqrt(1.0 + best_a * best_a);
             double nx = -best_a / denom;
