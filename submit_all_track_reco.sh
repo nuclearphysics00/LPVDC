@@ -4,6 +4,9 @@ set -euo pipefail
 PBS_SCRIPT="worker_track_reco_v2.pbs"
 #PBS_SCRIPT="worker_track_reco_optimize.pbs"
 
+# ===== 固定設定 =====
+# 全 worker / 全 PBS array job に対して 1 worker あたり 10 events を割り当てる
+EVENTS_PER_JOB=10
 
 EXES=(
   "./track_reco_avalanche_pap_plate"
@@ -33,6 +36,9 @@ if [ "${#EXES[@]}" -ne "${#TAGS[@]}" ]; then
   exit 2
 fi
 
+echo "[INFO] PBS_SCRIPT     = $PBS_SCRIPT"
+echo "[INFO] EVENTS_PER_JOB = $EVENTS_PER_JOB"
+
 for i in "${!EXES[@]}"; do
   exe="${EXES[$i]}"
   tag="${TAGS[$i]}"
@@ -42,6 +48,7 @@ for i in "${!EXES[@]}"; do
     continue
   fi
 
-  echo "Submitting: tag=$tag  exe=$exe"
-  qsub -v EXE="$exe",JOB_TAG="$tag" "$PBS_SCRIPT"
+  echo "Submitting: tag=$tag  exe=$exe  EVENTS_PER_JOB=$EVENTS_PER_JOB"
+
+  qsub -v EXE="$exe",JOB_TAG="$tag",EVENTS_PER_JOB="$EVENTS_PER_JOB" "$PBS_SCRIPT"
 done

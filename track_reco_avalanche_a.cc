@@ -251,6 +251,17 @@ static std::string ResolveArrayId() {
   return "manual";
 }
 
+static bool TryParsePositiveInt(const char* s, int& out) {
+  if (s == nullptr || *s == '\0') return false;
+  char* end = nullptr;
+  long v = std::strtol(s, &end, 10);
+  if (end == s || *end != '\0') return false;
+  if (v <= 0 || v > std::numeric_limits<int>::max()) return false;
+  out = static_cast<int>(v);
+  return true;
+}
+
+
 struct TrackSegment {
   double x0 = 0.0;
   double y0 = 0.0;
@@ -331,12 +342,38 @@ int main(int argc, char** argv) {
   // ★ バッチジョブ向けに画面の乱立を防ぐためバッチモードをON(非表示)にする
   gROOT->SetBatch(kTRUE);  gStyle->SetOptStat(0);
 
-  // ★ 引数処理: 第1引数=ジョブID(シード値), 第2引数=時間ヒストグラム(任意)
+  // ★ 引数処理:
+  //   argv[1] = worker/job ID
+  //   argv[2] = eventsPerJob または time histogram file
+  //   argv[3] = time histogram file または eventsPerJob
+  //
+  // 例:
+  //   ./track_reco_avalanche_a_wirecath 1
+  //   ./track_reco_avalanche_a_wirecath 1 10
+  //   ./track_reco_avalanche_a_wirecath 1 root/.../t_hist_nt.csv 10
+  //   EVENTS_PER_JOB=10 ./track_reco_avalanche_a_wirecath 1
   int job_seed = 1;
+  int eventsPerJob = 1;
   std::string timeHistFile;
 
   if (argc > 1) {
-      job_seed = std::atoi(argv[1]);
+      int parsedJob = 0;
+      if (TryParsePositiveInt(argv[1], parsedJob)) {
+          job_seed = parsedJob;
+      } else {
+          std::cerr << "[WARN] invalid job id: " << argv[1]
+                    << " -> use job_seed = 1" << std::endl;
+      }
+  }
+
+  if (const char* envEvents = std::getenv("EVENTS_PER_JOB")) {
+      int parsedEvents = 0;
+      if (TryParsePositiveInt(envEvents, parsedEvents)) {
+          eventsPerJob = parsedEvents;
+      } else {
+          std::cerr << "[WARN] invalid EVENTS_PER_JOB=" << envEvents
+                    << " -> use eventsPerJob = 1" << std::endl;
+      }
   }
   
   #if defined(GEOM_WIRE)
@@ -350,13 +387,35 @@ int main(int argc, char** argv) {
     const char* defaultTimeHistFile = "";
   #endif
 
+  timeHistFile = defaultTimeHistFile;
+
+  // Flexible optional arguments:
+  //   argv[2] can be either eventsPerJob or timeHistFile.
+  //   argv[3] can be either eventsPerJob or timeHistFile.
   if (argc > 2) {
-      timeHistFile = argv[2];
-  } else {
-      timeHistFile = defaultTimeHistFile;
+      int parsedEvents = 0;
+      if (TryParsePositiveInt(argv[2], parsedEvents)) {
+          eventsPerJob = parsedEvents;
+      } else {
+          timeHistFile = argv[2];
+      }
   }
 
+  if (argc > 3) {
+      int parsedEvents = 0;
+      if (TryParsePositiveInt(argv[3], parsedEvents)) {
+          eventsPerJob = parsedEvents;
+      } else {
+          timeHistFile = argv[3];
+      }
+  }
+
+  const int evStart = (job_seed - 1) * eventsPerJob + 1;
+  const int evEnd   = evStart + eventsPerJob;
+
   std::printf("[env] Job Seed (ID) = %d\n", job_seed);
+  std::printf("[env] eventsPerJob = %d\n", eventsPerJob);
+  std::printf("[env] event range  = %d to %d\n", evStart, evEnd - 1);
   std::printf("[env] timeHistFile=%s\n", timeHistFile.c_str());
   std::printf("[env] Array ID = %s\n", ResolveArrayId().c_str());
 
@@ -448,7 +507,9 @@ int main(int argc, char** argv) {
   gSystem->mkdir(figDir.c_str(), kTRUE);
   fs::create_directories(fs::path(figDir) / "waveform");
   fs::create_directories(fs::path(figDir) / "gain");
-  fs::path trackDir = vCatDir / "track";
+
+  // track も array_<PBS_ARRAY_ID> 以下に保存する
+  fs::path trackDir = arrayOutDir / "track";
   fs::create_directories(trackDir);
 
   // 3. データ記録用ROOTファイルセットアップ (★ファイル名にjob_seedを付与)
@@ -462,6 +523,86 @@ int main(int argc, char** argv) {
   tree->Branch("x_true", &t_x_true); tree->Branch("a_reco", &t_a_reco); tree->Branch("b_reco", &t_b_reco);
   tree->Branch("x_reco", &t_x_reco); tree->Branch("diff_x", &t_diff); tree->Branch("chi2",&t_chi2);
   tree->Branch("nHits", &t_nHits);
+
+  // ===== Additional event-level diagnostic branches =====
+  // 1 event = 1 entry.
+  double t_theta_true, t_theta_reco;
+  double t_chi2_ndf;
+  double t_mean_t_hit, t_mean_L_meas, t_mean_gain;
+  double t_rms_hit_residual;
+  double t_max_abs_hit_residual;
+  int    t_n_side_wrong;
+
+  // Active-track segment used for primary-electron injection.
+  double t_active_x0, t_active_y0, t_active_x1, t_active_y1;
+  int    t_nClusters;
+
+  tree->Branch("theta_true", &t_theta_true);
+  tree->Branch("theta_reco", &t_theta_reco);
+  tree->Branch("chi2_ndf", &t_chi2_ndf);
+  tree->Branch("mean_t_hit", &t_mean_t_hit);
+  tree->Branch("mean_L_meas", &t_mean_L_meas);
+  tree->Branch("mean_gain", &t_mean_gain);
+  tree->Branch("rms_hit_residual", &t_rms_hit_residual);
+  tree->Branch("max_abs_hit_residual", &t_max_abs_hit_residual);
+  tree->Branch("n_side_wrong", &t_n_side_wrong);
+  tree->Branch("active_x0", &t_active_x0);
+  tree->Branch("active_y0", &t_active_y0);
+  tree->Branch("active_x1", &t_active_x1);
+  tree->Branch("active_y1", &t_active_y1);
+  tree->Branch("nClusters", &t_nClusters);
+
+  // ===== Hit-level diagnostic tree =====
+  // 1 hit = 1 entry. Used for correlations:
+  // diff_x vs t_hit, diff_x vs wire_x, hit_residual vs gain, etc.
+  TTree* hitTree = new TTree("hitTree", "Hit-level reconstruction information");
+  hitTree->SetDirectory(fOut);
+
+  int h_event_id;
+  int h_nHits;
+  int h_hit_id;
+  int h_wire_index;
+  int h_selected_side;  // +1: up, -1: down
+  int h_true_side;      // +1: up, -1: down
+  int h_side_ok;        // 1: correct, 0: wrong
+
+  double h_diff_x;
+  double h_chi2;
+  double h_wire_x;
+  double h_wire_y;
+  double h_t_hit;
+  double h_L_meas;
+  double h_gain;
+  int    h_n_primary;
+  int    h_n_total;
+  double h_y_selected;
+  double h_y_reco;
+  double h_y_true;
+  double h_hit_residual;
+  double h_truth_residual;
+
+  hitTree->Branch("event_id", &h_event_id);
+  hitTree->Branch("nHits", &h_nHits);
+  hitTree->Branch("hit_id", &h_hit_id);
+  hitTree->Branch("wire_index", &h_wire_index);
+  hitTree->Branch("selected_side", &h_selected_side);
+  hitTree->Branch("true_side", &h_true_side);
+  hitTree->Branch("side_ok", &h_side_ok);
+
+  hitTree->Branch("diff_x", &h_diff_x);
+  hitTree->Branch("chi2", &h_chi2);
+  hitTree->Branch("wire_x", &h_wire_x);
+  hitTree->Branch("wire_y", &h_wire_y);
+  hitTree->Branch("t_hit", &h_t_hit);
+  hitTree->Branch("L_meas", &h_L_meas);
+  hitTree->Branch("gain", &h_gain);
+  hitTree->Branch("n_primary", &h_n_primary);
+  hitTree->Branch("n_total", &h_n_total);
+  hitTree->Branch("y_selected", &h_y_selected);
+  hitTree->Branch("y_reco", &h_y_reco);
+  hitTree->Branch("y_true", &h_y_true);
+  hitTree->Branch("hit_residual", &h_hit_residual);
+  hitTree->Branch("truth_residual", &h_truth_residual);
 
   Sensor sensor; sensor.AddComponent(comp.get()); sensor.SetArea(geo.xmin, geo.ymin, -5.0, geo.xmax, geo.ymax, +5.0);
   int numAnodes = 0;
@@ -484,7 +625,8 @@ int main(int argc, char** argv) {
   const int nSigBins = std::max(200, (int)std::ceil((tmax_sig - t0_sig_ns) / dt_sig_ns));
   sensor.SetTimeWindow(t0_sig_ns, dt_sig_ns, nSigBins);
 
-  // ★ シード値を設定し、1ジョブあたり1イベントにする
+  // ★ workerごとに乱数列を変える。
+  // 同じworker内の複数イベントは、この乱数列を連続して使う。
   TRandom3 gen(job_seed); 
   
   TFile* fDriftOut = nullptr;
@@ -881,9 +1023,11 @@ int main(int argc, char** argv) {
   }
 
   // =========================================================
-  // イベントループ (1ジョブ = 1イベント)
+  // イベントループ
+  //   worker/job ID = 1 -> ev = 1 ... eventsPerJob
+  //   worker/job ID = 2 -> ev = eventsPerJob+1 ... 2*eventsPerJob
   // =========================================================
-  for (int ev = job_seed; ev < job_seed + 1; ++ev) {
+  for (int ev = evStart; ev < evEnd; ++ev) {
         std::printf("\n>>> Processing Event/Job ID %d <<<\n", ev);
         
         // --- True track generation with angular straggling ---
@@ -1018,7 +1162,19 @@ int main(int argc, char** argv) {
             evGainData.push_back(data);
         }
 
-        struct HitCand { double xwire, ywire, y_up, y_dn; };
+        struct HitCand {
+          double xwire;
+          double ywire;
+          double y_up;
+          double y_dn;
+          double t_hit;
+          double L_meas;
+          int wire_index;
+
+          double gain;
+          int n_primary;
+          int n_total;
+        };
         std::vector<HitCand> hits;
         
         // 閾値判定 (4mV)
@@ -1040,8 +1196,6 @@ int main(int argc, char** argv) {
                   gW.SetTitle((wName + " (Ev " + std::to_string(ev) + ");Time [ns];Signal [mV]").c_str());
                   gW.SetLineWidth(1); gW.SetLineColor(kBlue); gW.Draw("AL");
 
-                  TLine lth_p(t0_sig_ns, signalThreshold, tmax_sig, signalThreshold);
-                  lth_p.SetLineColor(kRed); lth_p.SetLineStyle(2); lth_p.Draw("same");
                   TLine lth_n(t0_sig_ns, -signalThreshold, tmax_sig, -signalThreshold);
                   lth_n.SetLineColor(kRed); lth_n.SetLineStyle(2); lth_n.Draw("same");
 
@@ -1054,7 +1208,7 @@ int main(int argc, char** argv) {
                 double t_hit = -1.0;
                 for (int k = 0; k < nSigBins; ++k) {
                   //if (std::abs(sensor.GetSignal(wName, k, true)) > signalThreshold) {
-                  if (sensor.GetSignal(wName, k, true) < signalThreshold) {
+                  if (sensor.GetSignal(wName, k, true) < -signalThreshold) {
                     t_hit = t0_sig_ns + k * dt_sig_ns; break; 
                   }
                 }
@@ -1062,7 +1216,35 @@ int main(int argc, char** argv) {
                 if (t_hit >= 0.0) {
                     double L_meas = CalculateL0Directly(th, gap_val, t_hit);
                     if (L_meas < 0) L_meas = 0;
-                    hits.push_back({xw, yw, yw + L_meas, yw - L_meas});
+
+                    int wire_index = 0;
+                    if (geo.pitchX > 0.0) {
+                      wire_index = (int)std::round(xw / geo.pitchX);
+                    }
+
+                    double hit_gain = 0.0;
+                    int hit_n_primary = 0;
+                    int hit_n_total = 0;
+
+                    auto itGain = globalGainMap.find(wName);
+                    if (itGain != globalGainMap.end()) {
+                      hit_gain = itGain->second.gain;
+                      hit_n_primary = itGain->second.n_primary;
+                      hit_n_total = itGain->second.n_total;
+                    }
+
+                    hits.push_back({
+                      xw,
+                      yw,
+                      yw + L_meas,
+                      yw - L_meas,
+                      t_hit,
+                      L_meas,
+                      wire_index,
+                      hit_gain,
+                      hit_n_primary,
+                      hit_n_total
+                    });
                 }
             }
         }
@@ -1156,14 +1338,103 @@ int main(int argc, char** argv) {
         cTrk.SaveAs(Form("%s/track_reco_combinatorial_ev%d.png", figDir.c_str(), ev));
 
         t_event_id = ev;
-        t_a_true = a_true; t_b_true = b_true; t_x_true = x_intercept_true;
-        t_a_reco = best_a; t_b_reco = best_b; t_x_reco = x_intercept_reco;
-        t_diff = diff_val; t_chi2 = min_chi2;
+
+        t_a_true = a_true;
+        t_b_true = b_true;
+        t_x_true = x_intercept_true;
+
+        t_a_reco = best_a;
+        t_b_reco = best_b;
+        t_x_reco = x_intercept_reco;
+
+        t_diff = diff_val;
+        t_chi2 = min_chi2;
         t_nHits = nHits;
+
+        t_theta_true = true_angle_rad;
+        t_theta_reco = std::atan(best_a);
+        t_chi2_ndf = min_chi2 / std::max(1, nHits - 2);
+
+        t_active_x0 = activeTrack.x0;
+        t_active_y0 = activeTrack.y0;
+        t_active_x1 = activeTrack.x1;
+        t_active_y1 = activeTrack.y1;
+        t_nClusters = nClusters;
+
+        double sum_t_hit = 0.0;
+        double sum_L_meas = 0.0;
+        double sum_gain = 0.0;
+        double sum_res2 = 0.0;
+        double max_abs_res = 0.0;
+        int n_side_wrong = 0;
+
+        for (int i = 0; i < nHits; ++i) {
+          const double x = hits[i].xwire;
+
+          // Candidate selected by the best mask.
+          const bool use_down = ((best_mask >> i) & 1);
+          const double y_selected = use_down ? hits[i].y_dn : hits[i].y_up;
+
+          const double y_reco = best_a * x + best_b;
+          const double y_true = a_true * x + b_true;
+
+          const double hit_residual = y_selected - y_reco;
+          const double truth_residual = y_selected - y_true;
+
+          // Side definition: +1 = up, -1 = down.
+          const int selected_side = use_down ? -1 : +1;
+          const int true_side = (y_true >= hits[i].ywire) ? +1 : -1;
+          const int side_ok = (selected_side == true_side) ? 1 : 0;
+
+          if (!side_ok) n_side_wrong++;
+
+          sum_t_hit += hits[i].t_hit;
+          sum_L_meas += hits[i].L_meas;
+          sum_gain += hits[i].gain;
+          sum_res2 += hit_residual * hit_residual;
+          max_abs_res = std::max(max_abs_res, std::abs(hit_residual));
+
+          // Fill hit-level tree.
+          h_event_id = ev;
+          h_nHits = nHits;
+          h_hit_id = i;
+          h_wire_index = hits[i].wire_index;
+          h_selected_side = selected_side;
+          h_true_side = true_side;
+          h_side_ok = side_ok;
+
+          h_diff_x = diff_val;
+          h_chi2 = min_chi2;
+          h_wire_x = hits[i].xwire;
+          h_wire_y = hits[i].ywire;
+          h_t_hit = hits[i].t_hit;
+          h_L_meas = hits[i].L_meas;
+          h_gain = hits[i].gain;
+          h_n_primary = hits[i].n_primary;
+          h_n_total = hits[i].n_total;
+          h_y_selected = y_selected;
+          h_y_reco = y_reco;
+          h_y_true = y_true;
+          h_hit_residual = hit_residual;
+          h_truth_residual = truth_residual;
+
+          hitTree->Fill();
+        }
+
+        t_mean_t_hit = sum_t_hit / nHits;
+        t_mean_L_meas = sum_L_meas / nHits;
+        t_mean_gain = sum_gain / nHits;
+        t_rms_hit_residual = std::sqrt(sum_res2 / nHits);
+        t_max_abs_hit_residual = max_abs_res;
+        t_n_side_wrong = n_side_wrong;
+
         tree->Fill();
     } 
 
-    fOut->cd(); tree->Write(); fOut->Close();
+    fOut->cd();
+    tree->Write();
+    hitTree->Write();
+    fOut->Close();
 #if SAVE_DRIFT_ROOT
     fDriftOut->cd(); tDrift->Write(); fDriftOut->Close();
 #endif
